@@ -1,12 +1,13 @@
 {
-  "name": "wash-ts",
-  "version": "1.0.0",
-  "description": "NPM Packages for Wash",
-  "main": "",
-  "scripts": {},
+  "name": "washboard-workspace",
+  "packageManager": "yarn@3.6.3",
   "workspaces": [
     "washboard"
   ],
+  "private": true,
+  "version": "1.0.0",
+  "description": "NPM Packages for Wash",
+  "main": "",
   "keywords": [],
   "author": "",
   "license": "Apache-2.0"
