@@ -42,10 +42,87 @@ jobs:
           name: windows
           path: target/release/wash.exe
 
-  release:
-    needs: [cargo_check, clippy_check, windows_build]
-    runs-on: ubuntu-latest
+  build_bin:
+    strategy:
+      matrix:
+        config:
+          - target: aarch64-apple-darwin
+            install-path: /bin/wash
+            test-bin: file ./result/bin/wash
+            test-oci: docker load < ./result
+
+          - target: aarch64-linux-android
+            install-path: /bin/wash
+            test-bin: file ./result/bin/wash
+            test-oci: docker load < ./result
+
+          - target: aarch64-unknown-linux-musl
+            install-path: /bin/wash
+            test-bin: nix shell --inputs-from . 'nixpkgs#qemu' -c qemu-aarch64 ./result/bin/wash --version
+            test-oci: docker load < ./result
+            # TODO: Run aarch64 binary within OCI
+
+          - target: x86_64-apple-darwin
+            install-path: /bin/wash
+            test-bin: file ./result/bin/wash
+            test-oci: docker load < ./result
+
+          - target: x86_64-pc-windows-gnu
+            install-path: /bin/wash.exe
+            test-bin: nix shell --inputs-from . 'nixpkgs#wine64' -c wine64 ./result/bin/wash.exe --version
+            test-oci: docker load < ./result
+            # TODO: Run win64 binary within OCI
+
+          - target: x86_64-unknown-linux-musl
+            install-path: /bin/wash
+            test-bin: ./result/bin/wash --version
+            test-oci: |
+              docker load < ./result
+              docker run --rm wash:$(nix eval --raw .#wash-x86_64-unknown-linux-musl-oci.imageTag) wash --version
+
+    name: wash-${{ matrix.config.target }}
+    runs-on: ubuntu-22.04
     steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/install-nix
+        with:
+          cachixAuthToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      - uses: ./.github/actions/build-nix
+        with:
+          package: wash-${{ matrix.config.target }}
+          install-path: ${{ matrix.config.install-path }}
+      - run: ${{ matrix.config.test-bin }}
+      - uses: ./.github/actions/build-nix
+        with:
+          package: wash-${{ matrix.config.target }}-oci
+      - run: ${{ matrix.config.test-oci }}
+
+  release:
+    needs: [cargo_check, clippy_check, windows_build, build_bin]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4.1.0
+      - uses: actions/download-artifact@v3
+        with:
+          name: wash-aarch64-apple-darwin
+      - uses: actions/download-artifact@v3
+        with:
+          name: wash-aarch64-linux-android
+      - uses: actions/download-artifact@v3
+        with:
+          name: wash-aarch64-unknown-linux-musl
+      - uses: actions/download-artifact@v3
+        with:
+          name: wash-x86_64-apple-darwin
+      - uses: actions/download-artifact@v3
+        with:
+          name: wash-x86_64-pc-windows-gnu
+      - uses: actions/download-artifact@v3
+        with:
+          name: wash-x86_64-unknown-linux-musl
+      - run: chmod +x ./wash-*
       # We need to put windows on the release so that chocolatey can download it
       - name: Download windows release
         uses: actions/download-artifact@v3
@@ -55,7 +132,14 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          files: release/windows/wash.exe
+          files: |
+            release/windows/wash.exe
+            wash-aarch64-apple-darwin
+            wash-aarch64-linux-android
+            wash-aarch64-unknown-linux-musl
+            wash-x86_64-apple-darwin
+            wash-x86_64-pc-windows-gnu
+            wash-x86_64-unknown-linux-musl
           generate_release_notes: true
           tag_name: ${{ github.ref_name }}
           release_name: Release ${{ github.ref_name }}
